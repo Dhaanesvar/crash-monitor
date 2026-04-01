@@ -5,6 +5,37 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>CarDash Monitor</title>
 <style>
+.main-layout{
+  display:flex;
+  align-items:flex-start;
+}
+
+.nav-panel{
+  width:220px;
+  flex-shrink:0;
+  height:100vh;
+  background:#0f1320;
+  border-right:1px solid #1e2d4a;
+  padding:20px 10px;
+}
+
+.nav-item{
+  padding:12px;
+  margin-bottom:10px;
+  color:#c8d8f0;
+  font-family:'Rajdhani';
+  cursor:pointer;
+  border:1px solid transparent;
+}
+
+.nav-item:hover{
+  border:1px solid #00d4ff;
+  color:#00d4ff;
+}
+
+.dashboard{
+  flex:1;
+}
 @import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=Share+Tech+Mono&display=swap');
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -72,7 +103,17 @@ canvas#mapCanvas{display:block;width:100%}
 </style>
 </head>
 <body>
-<div class="dashboard">
+<div class="main-layout">
+
+  <!-- LEFT NAVBAR -->
+  <div class="nav-panel">
+    <div class="nav-item">🏠 Dashboard</div>
+    <div class="nav-item">📍 Destinations</div>
+    <div class="nav-item">🌧 Weather</div>
+    <div class="nav-item">⚠ Logs</div>
+  </div>
+
+  <div class="dashboard">
 
   <div class="header">
     <div class="logo">
