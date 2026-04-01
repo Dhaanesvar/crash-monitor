@@ -56,9 +56,34 @@ static float  g_speed = 0.0f;
 static float  g_lat   = 3.0f;
 static float  g_lon   = 101.0f;
 static int    g_crash = 0;
-
+// ─── GPS DATA FLAG ──────────────────────────────────────────
+static volatile int g_has_real_gps = 0;
 // Crash auto-clear timestamp (esp_timer ticks, microseconds)
 static int64_t g_crash_time = 0;
+
+// ─── MOVEMENT STATE ──────────────────────────────────────────
+static int    g_moving = 0; // 0 = static, 1 = moving
+static float  g_last_lat = 0.0f;
+static float  g_last_lon = 0.0f;
+static int    g_static_count = 0;
+
+// Call this after updating g_lat/g_lon to update movement state
+static void update_movement_state(void) {
+    float dlat = g_lat - g_last_lat;
+    float dlon = g_lon - g_last_lon;
+    float dist = dlat * dlat + dlon * dlon;
+    // If moved more than ~0.00001 deg (~1m), consider moving
+    if (dist > 0.0000001f) {
+        g_moving = 1;
+        g_static_count = 0;
+        g_last_lat = g_lat;
+        g_last_lon = g_lon;
+    } else {
+        g_static_count++;
+        // If static for 3+ checks, set to static
+        if (g_static_count >= 3) g_moving = 0;
+    }
+}
 
 // ─── FORWARD DECLARATIONS ─────────────────────────────────────
 static void trigger_crash(void);
@@ -168,37 +193,42 @@ static void sim_task(void *arg)
     ESP_LOGI(TAG, "Simulation task started");
 
     while (1) {
-        // --- Speed: 20–120 km/h random walk ---
-        g_speed = 20.0f + (float)(rand() % 101);
+        // Only simulate if no real GPS data
+        if (!g_has_real_gps) {
+            // --- Speed: 20–120 km/h random walk ---
+            g_speed = 20.0f + (float)(rand() % 101);
 
-        // --- GPS: small random walk around Klang Valley ---
-        g_lat += ((float)((rand() % 2001) - 1000)) / 100000.0f;
-        g_lon += ((float)((rand() % 2001) - 1000)) / 100000.0f;
-        if (g_lat >  90.0f) g_lat =  90.0f;
-        if (g_lat < -90.0f) g_lat = -90.0f;
-        if (g_lon >  180.0f) g_lon =  180.0f;
-        if (g_lon < -180.0f) g_lon = -180.0f;
+            // --- GPS: small random walk around Klang Valley ---
+            g_lat += ((float)((rand() % 2001) - 1000)) / 100000.0f;
+            g_lon += ((float)((rand() % 2001) - 1000)) / 100000.0f;
+            if (g_lat >  90.0f) g_lat =  90.0f;
+            if (g_lat < -90.0f) g_lat = -90.0f;
+            if (g_lon >  180.0f) g_lon =  180.0f;
+            if (g_lon < -180.0f) g_lon = -180.0f;
 
-        // --- Crash: 1% chance per second ---
-        if ((rand() % 100) == 0) {
-            trigger_crash();
-        }
-
-        // --- Auto-clear crash after CRASH_CLEAR_SEC seconds ---
-#if CRASH_CLEAR_SEC > 0
-        if (g_crash) {
-            int64_t elapsed_us = esp_timer_get_time() - g_crash_time;
-            if (elapsed_us > (int64_t)CRASH_CLEAR_SEC * 1000000LL) {
-                g_crash = 0;
-                ESP_LOGI(TAG, "Crash state cleared");
+            // --- Crash: 1% chance per second ---
+            if ((rand() % 100) == 0) {
+                trigger_crash();
             }
-        }
+
+            // --- Auto-clear crash after CRASH_CLEAR_SEC seconds ---
+#if CRASH_CLEAR_SEC > 0
+            if (g_crash) {
+                int64_t elapsed_us = esp_timer_get_time() - g_crash_time;
+                if (elapsed_us > (int64_t)CRASH_CLEAR_SEC * 1000000LL) {
+                    g_crash = 0;
+                    ESP_LOGI(TAG, "Crash state cleared");
+                }
+            }
 #endif
 
-        ESP_LOGI(TAG, "SIM  speed=%.1f  lat=%.6f  lon=%.6f  crash=%d",
-                 g_speed, g_lat, g_lon, g_crash);
+            update_movement_state();
 
-        vTaskDelay(pdMS_TO_TICKS(1000));
+            ESP_LOGI(TAG, "SIM  speed=%.1f  lat=%.6f  lon=%.6f  crash=%d",
+                     g_speed, g_lat, g_lon, g_crash);
+
+            vTaskDelay(pdMS_TO_TICKS(1000));
+        }
     }
 }
 
@@ -227,8 +257,8 @@ static esp_err_t gps_handler(httpd_req_t *req)
 {
     char resp[160];
     snprintf(resp, sizeof(resp),
-             "{\"speed\":%.2f,\"lat\":%.6f,\"lng\":%.6f,\"crash\":%d}",
-             g_speed, g_lat, g_lon, g_crash);
+             "{\"speed\":%.2f,\"lat\":%.6f,\"lng\":%.6f,\"crash\":%d,\"moving\":%d}",
+             g_speed, g_lat, g_lon, g_crash, g_moving);
 
     httpd_resp_set_type(req, "application/json");
     httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
@@ -329,6 +359,60 @@ static void wifi_init(void)
     ESP_LOGI(TAG, "WiFi AP started  SSID=\"%s\"  IP=192.168.4.1", WIFI_SSID);
 }
 
+// ─── NMEA PARSER ─────────────────────────────────────────────
+// Simple NMEA $GNRMC/$GPGGA parser for Quectel EG91-EX GPS
+static void parse_nmea_line(const char *line) {
+    // Example: $GNRMC,hhmmss.sss,A,lat,NS,lon,EW,...
+    if (strstr(line, "$GNRMC,") == line) {
+        char status;
+        double lat_raw, lon_raw;
+        char ns, ew;
+        int n = sscanf(line, "$GNRMC,%*[^,],%c,%lf,%c,%lf,%c,",
+                       &status, &lat_raw, &ns, &lon_raw, &ew);
+        if (n == 5 && status == 'A') {
+            // Convert NMEA format (ddmm.mmmm) to decimal degrees
+            int lat_deg = (int)(lat_raw / 100);
+            double lat_min = lat_raw - lat_deg * 100;
+            double lat = lat_deg + lat_min / 60.0;
+            if (ns == 'S') lat = -lat;
+            int lon_deg = (int)(lon_raw / 100);
+            double lon_min = lon_raw - lon_deg * 100;
+            double lon = lon_deg + lon_min / 60.0;
+            if (ew == 'W') lon = -lon;
+            g_lat = (float)lat;
+            g_lon = (float)lon;
+            update_movement_state();
+            g_has_real_gps = 1;
+        }
+    }
+}
+
+// ─── GPS TASK ───────────────────────────────────────────────
+// Reads NMEA lines from EG91-EX and updates g_lat/g_lon
+static void gps_task(void *arg) {
+    char line[128];
+    int idx = 0;
+    uint8_t ch;
+    ESP_LOGI(TAG, "GPS task started");
+    while (1) {
+        int len = uart_read_bytes(UART_NUM, &ch, 1, pdMS_TO_TICKS(100));
+        if (len == 1) {
+            if (ch == '\n' || idx >= (int)sizeof(line)-1) {
+                line[idx] = '\0';
+                if (idx > 6 && (strstr(line, "$GNRMC,") == line)) {
+                    parse_nmea_line(line);
+                    g_has_real_gps = 1;
+                }
+                idx = 0;
+            } else if (ch != '\r') {
+                line[idx++] = ch;
+            }
+        } else {
+            vTaskDelay(pdMS_TO_TICKS(10));
+        }
+    }
+}
+
 // ─── MAIN ─────────────────────────────────────────────────────
 void app_main(void)
 {
@@ -358,6 +442,9 @@ void app_main(void)
 
     // Background simulation (replace with real sensor task in production)
     xTaskCreate(sim_task, "sim_task", 4096, NULL, 5, NULL);
+
+    // Start GPS task for real Quectel EG91-EX GPS
+    xTaskCreate(gps_task, "gps_task", 4096, NULL, 6, NULL);
 
     ESP_LOGI(TAG, "=== System ready — open http://192.168.4.1 ===");
 }
