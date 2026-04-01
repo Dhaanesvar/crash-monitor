@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CarDash Monitor</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=Share+Tech+Mono&display=swap');
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0a0c12;--panel:#0f1320;--panel2:#141928;--border:#1e2d4a;
+  --accent:#00d4ff;--accent2:#ff4d6a;--accent3:#00ffb3;--warn:#ffaa00;
+  --text:#c8d8f0;--muted:#4a6080;
+  --font:'Rajdhani',Times New Roman,Times,serif;--mono:'Share Tech Mono',monospace;
+}
+body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:100vh;overflow-x:hidden}
+.dashboard{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;padding:12px;max-width:1100px;margin:0 auto}
+.header{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;padding:14px 20px;background:var(--panel);border:1px solid var(--border);border-top:2px solid var(--accent);position:relative;overflow:hidden}
+.header::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--accent),transparent);animation:scan 3s linear infinite}
+@keyframes scan{from{transform:translateX(-100%)}to{transform:translateX(100%)}}
+.logo{display:flex;align-items:center;gap:12px}
+.logo-icon{width:40px;height:40px;background:var(--accent);clip-path:polygon(50% 0%,100% 25%,100% 75%,50% 100%,0% 75%,0% 25%);display:flex;align-items:center;justify-content:center;font-size:18px}
+.logo h1{font-size:22px;font-weight:700;letter-spacing:3px;color:#fff;text-transform:uppercase}
+.logo span{font-size:11px;color:var(--muted);letter-spacing:2px;display:block;font-family:var(--mono)}
+.status-bar{display:flex;gap:20px;align-items:center}
+.status-dot{width:8px;height:8px;border-radius:50%;background:var(--accent3);box-shadow:0 0 8px var(--accent3);animation:pulse 2s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
+.status-text{font-family:var(--mono);font-size:12px;color:var(--muted)}
+.time-display{font-family:var(--mono);font-size:14px;color:var(--accent)}
+.speed-card{grid-column:1/2;background:var(--panel);border:1px solid var(--border);padding:20px;position:relative;overflow:hidden}
+.speed-card::after{content:'';position:absolute;bottom:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--accent),transparent)}
+.card-label{font-size:11px;letter-spacing:3px;color:var(--muted);text-transform:uppercase;margin-bottom:16px}
+.gauge-wrap{display:flex;flex-direction:column;align-items:center}
+canvas#gauge{display:block}
+.speed-readout{margin-top:-20px;text-align:center}
+.speed-value{font-size:56px;font-weight:700;color:#fff;line-height:1;font-family:var(--mono);text-shadow:0 0 20px var(--accent);transition:color 0.3s}
+.speed-unit{font-size:13px;color:var(--muted);letter-spacing:3px}
+.map-card{grid-column:2/4;background:var(--panel);border:1px solid var(--border);padding:20px;position:relative}
+.map-canvas-wrap{position:relative;background:#060c1a;border:1px solid var(--border);overflow:hidden;border-radius:4px}
+canvas#mapCanvas{display:block;width:100%}
+.map-overlay{position:absolute;top:8px;left:8px;font-family:var(--mono);font-size:10px;color:var(--accent);opacity:0.7}
+.coord-display{position:absolute;bottom:8px;left:8px;font-family:var(--mono);font-size:10px;color:var(--accent3)}
+.telemetry-card{grid-column:1/2;background:var(--panel);border:1px solid var(--border);padding:20px}
+.telem-row{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border)}
+.telem-row:last-child{border-bottom:none}
+.telem-label{font-size:12px;letter-spacing:1px;color:var(--muted);text-transform:uppercase}
+.telem-val{font-family:var(--mono);font-size:14px;color:var(--accent3)}
+.crash-card{grid-column:2/3;background:var(--panel);border:1px solid var(--border);padding:20px;position:relative;overflow:hidden}
+.crash-card.CRASH{border-color:var(--accent2);animation:crash-border 0.5s ease infinite alternate}
+@keyframes crash-border{from{border-color:var(--accent2);box-shadow:0 0 0 rgba(255,77,106,0)}to{border-color:var(--accent2);box-shadow:0 0 20px rgba(255,77,106,0.3)}}
+.crash-indicator{width:80px;height:80px;border-radius:50%;margin:0 auto 16px;display:flex;align-items:center;justify-content:center;font-size:28px;background:var(--panel2);border:2px solid var(--accent3);transition:all 0.3s}
+.crash-indicator.CRASH{background:rgba(255,77,106,0.15);border-color:var(--accent2);animation:crash-ring 0.6s ease infinite}
+@keyframes crash-ring{0%{box-shadow:0 0 0 0 rgba(255,77,106,0.6)}100%{box-shadow:0 0 0 20px rgba(255,77,106,0)}}
+.crash-status-text{text-align:center;font-size:18px;font-weight:700;letter-spacing:4px;text-transform:uppercase}
+.crash-meta{text-align:center;font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:8px}
+.log-card{grid-column:3/4;background:var(--panel);border:1px solid var(--border);padding:20px;display:flex;flex-direction:column}
+.log-list{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:6px;max-height:180px}
+.log-entry{font-family:var(--mono);font-size:10px;padding:6px 8px;border-left:2px solid var(--muted);background:var(--panel2);color:var(--muted);display:flex;gap:8px}
+.log-entry.CRASH{border-color:var(--accent2);color:var(--accent2)}
+.log-entry.WARN{border-color:var(--warn);color:var(--warn)}
+.log-time{color:var(--muted);flex-shrink:0}
+.sms-badge{display:inline-block;padding:2px 8px;font-size:10px;font-family:var(--mono);background:rgba(0,255,179,0.1);border:1px solid var(--accent3);color:var(--accent3);border-radius:2px;margin-top:6px}
+.sms-badge.sent{background:rgba(255,170,0,0.1);border-color:var(--warn);color:var(--warn)}
+.bar-row{margin-top:8px;display:flex;flex-direction:column;gap:6px}
+.bar-item{display:flex;align-items:center;gap:8px}
+.bar-label{font-size:10px;color:var(--muted);width:60px;flex-shrink:0}
+.bar-track{flex:1;height:6px;background:var(--panel2);border:1px solid var(--border);border-radius:2px;overflow:hidden}
+.bar-fill{height:100%;border-radius:2px;transition:width 0.5s ease}
+.bar-val{font-family:var(--mono);font-size:10px;color:var(--accent);width:32px;text-align:right}
+.grid-bg{position:absolute;inset:0;background-image:linear-gradient(rgba(0,212,255,0.03) 1px,transparent 1px),linear-gradient(90deg,rgba(0,212,255,0.03) 1px,transparent 1px);background-size:30px 30px;pointer-events:none}
+@media(max-width:700px){.dashboard{grid-template-columns:1fr}.map-card,.speed-card,.telemetry-card,.crash-card,.log-card{grid-column:1/-1}}
+</style>
+</head>
+<body>
+<div class="dashboard">
+
+  <div class="header">
+    <div class="logo">
+      <div class="logo-icon">&#128663;</div>
+      <div>
+        <h1>Car Dashboard Monitor</h1>
+        <span>ESP32 &middot; SIM800L &middot; WiFi AP &middot; CAR_DASH</span>
+      </div>
+    </div>
+    <div class="status-bar">
+      <div class="status-dot" id="status-dot"></div>
+      <span class="status-text" id="status-text">CONNECTING...</span>
+      <span class="time-display" id="clock">--:--:--</span>
+    </div>
+  </div>
+
+  <div class="speed-card">
+    <div class="grid-bg"></div>
+    <div class="card-label">&#11041; Vehicle Speed</div>
+    <div class="gauge-wrap">
+      <canvas id="gauge" width="220" height="130"></canvas>
+      <div class="speed-readout">
+        <div class="speed-value" id="speed-val">0</div>
+        <div class="speed-unit">KM / H</div>
+      </div>
+    </div>
+    <div class="bar-row" style="margin-top:18px">
+      <div class="bar-item">
+        <span class="bar-label">SPEED</span>
+        <div class="bar-track"><div class="bar-fill" id="bar-speed" style="background:var(--accent);width:0%"></div></div>
+        <span class="bar-val" id="bval-speed">0</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="map-card">
+    <div class="grid-bg"></div>
+    <div class="card-label">&#11041; GPS Position</div>
+    <div class="map-canvas-wrap">
+      <canvas id="mapCanvas" height="210"></canvas>
+      <div class="map-overlay">GPS &middot; LOCK &middot; 12 SAT</div>
+      <div class="coord-display" id="coord-display">LAT: -- &middot; LON: --</div>
+    </div>
+  </div>
+
+  <div class="telemetry-card">
+    <div class="grid-bg"></div>
+    <div class="card-label">&#11041; Live Telemetry</div>
+    <div class="telem-row"><span class="telem-label">Latitude</span><span class="telem-val" id="t-lat">--</span></div>
+    <div class="telem-row"><span class="telem-label">Longitude</span><span class="telem-val" id="t-lon">--</span></div>
+    <div class="telem-row"><span class="telem-label">Speed</span><span class="telem-val" id="t-spd">-- km/h</span></div>
+    <div class="telem-row"><span class="telem-label">Crash State</span><span class="telem-val" id="t-crash" style="color:var(--accent3)">CLEAR</span></div>
+    <div class="telem-row"><span class="telem-label">SMS Target</span><span class="telem-val" style="font-size:11px">+601121457455</span></div>
+    <div class="telem-row"><span class="telem-label">UART TX</span><span class="telem-val">GPIO 17</span></div>
+    <div class="telem-row"><span class="telem-label">UART RX</span><span class="telem-val">GPIO 16</span></div>
+    <div class="telem-row"><span class="telem-label">PWRKEY</span><span class="telem-val">GPIO 4</span></div>
+  </div>
+
+  <div class="crash-card" id="crash-card">
+    <div class="grid-bg"></div>
+    <div class="card-label">&#11041; Crash Detection</div>
+    <div class="crash-indicator" id="crash-indicator">&#128737;</div>
+    <div class="crash-status-text" id="crash-status" style="color:var(--accent3)">SAFE</div>
+    <div class="crash-meta" id="crash-meta">No event detected</div>
+    <div style="text-align:center;margin-top:8px">
+      <span class="sms-badge" id="sms-badge">SMS &middot; STANDBY</span>
+    </div>
+  </div>
+
+  <div class="log-card">
+    <div class="card-label">&#11041; Event Log</div>
+    <div class="log-list" id="log-list"></div>
+  </div>
+
+</div>
+<script>
+var speed=0,lat=0,lon=0,crash=0,trail=[],MAX_TRAIL=80,pollOk=false;
+
+function updateClock(){
+  var n=new Date();
+  document.getElementById('clock').textContent=n.toTimeString().slice(0,8);
+}
+setInterval(updateClock,1000);updateClock();
+
+var gCanvas=document.getElementById('gauge');
+var gCtx=gCanvas.getContext('2d');
+
+function drawGauge(spd){
+  var W=220,H=130,cx=110,cy=120,r=95;
+  var startAngle=Math.PI*1.1,endAngle=Math.PI*1.9;
+  var pct=Math.min(spd/200,1);
+  var valAngle=startAngle+pct*(endAngle-startAngle);
+  var zones=[{end:0.4,color:'#00ffb3'},{end:0.7,color:'#ffaa00'},{end:1.0,color:'#ff4d6a'}];
+  gCtx.clearRect(0,0,W,H);
+  gCtx.beginPath();gCtx.arc(cx,cy,r,startAngle,endAngle);
+  gCtx.strokeStyle='#1e2d4a';gCtx.lineWidth=12;gCtx.lineCap='round';gCtx.stroke();
+  var prev=startAngle;
+  zones.forEach(function(z){
+    var end=startAngle+z.end*(endAngle-startAngle);
+    gCtx.beginPath();gCtx.arc(cx,cy,r,prev,end);
+    gCtx.strokeStyle=z.color;gCtx.lineWidth=12;gCtx.globalAlpha=0.22;gCtx.stroke();
+    gCtx.globalAlpha=1;prev=end;
+  });
+  var a=startAngle;
+  zones.forEach(function(z){
+    var zEnd=startAngle+z.end*(endAngle-startAngle);
+    if(a>=valAngle)return;
+    var segEnd=Math.min(valAngle,zEnd);
+    gCtx.beginPath();gCtx.arc(cx,cy,r,a,segEnd);
+    gCtx.strokeStyle=z.color;gCtx.lineWidth=12;gCtx.lineCap='round';
+    gCtx.shadowColor=z.color;gCtx.shadowBlur=10;gCtx.stroke();gCtx.shadowBlur=0;a=segEnd;
+  });
+  for(var i=0;i<=10;i++){
+    var angle=startAngle+(i/10)*(endAngle-startAngle);
+    var inner=i%5===0?r-22:r-14;
+    gCtx.beginPath();
+    gCtx.moveTo(cx+Math.cos(angle)*r,cy+Math.sin(angle)*r);
+    gCtx.lineTo(cx+Math.cos(angle)*inner,cy+Math.sin(angle)*inner);
+    gCtx.strokeStyle=i%5===0?'#4a6080':'#2a3a50';gCtx.lineWidth=i%5===0?2:1;gCtx.stroke();
+    if(i%5===0){
+      gCtx.fillStyle='#4a6080';gCtx.font='9px monospace';
+      gCtx.textAlign='center';gCtx.textBaseline='middle';
+      gCtx.fillText(i*20,cx+Math.cos(angle)*(r-34),cy+Math.sin(angle)*(r-34));
+    }
+  }
+  gCtx.save();gCtx.translate(cx,cy);gCtx.rotate(valAngle);
+  var nc=pct<0.4?'#00ffb3':pct<0.7?'#ffaa00':'#ff4d6a';
+  gCtx.beginPath();gCtx.moveTo(-10,0);gCtx.lineTo(r-22,0);
+  gCtx.strokeStyle=nc;gCtx.lineWidth=2.5;gCtx.shadowColor=nc;gCtx.shadowBlur=8;gCtx.stroke();
+  gCtx.shadowBlur=0;gCtx.restore();
+  gCtx.beginPath();gCtx.arc(cx,cy,7,0,Math.PI*2);
+  gCtx.fillStyle='#1e2d4a';gCtx.fill();
+  gCtx.strokeStyle='#00d4ff';gCtx.lineWidth=1.5;gCtx.stroke();
+}
+
+var mCanvas=document.getElementById('mapCanvas');
+var mCtx=mCanvas.getContext('2d');
+var baseLat=0,baseLon=0,baseSet=false;
+
+function initMapSize(){mCanvas.width=mCanvas.parentElement.offsetWidth}
+
+function toScreen(pt,W,H){
+  var scale=3000;
+  return{x:W/2+(pt.lon-baseLon)*scale,y:H/2-(pt.lat-baseLat)*scale};
+}
+
+function drawMap(){
+  var W=mCanvas.width,H=210;
+  mCtx.clearRect(0,0,W,H);
+  mCtx.strokeStyle='rgba(0,212,255,0.06)';mCtx.lineWidth=1;
+  for(var x=0;x<W;x+=30){mCtx.beginPath();mCtx.moveTo(x,0);mCtx.lineTo(x,H);mCtx.stroke()}
+  for(var y=0;y<H;y+=30){mCtx.beginPath();mCtx.moveTo(0,y);mCtx.lineTo(W,y);mCtx.stroke()}
+  if(trail.length>1){
+    for(var i=1;i<trail.length;i++){
+      var p1=toScreen(trail[i-1],W,H),p2=toScreen(trail[i],W,H);
+      var alpha=i/trail.length;
+      mCtx.beginPath();mCtx.moveTo(p1.x,p1.y);mCtx.lineTo(p2.x,p2.y);
+      mCtx.strokeStyle=crash?'rgba(255,77,106,'+alpha*0.8+')':'rgba(0,212,255,'+alpha*0.6+')';
+      mCtx.lineWidth=1.5;mCtx.stroke();
+    }
+  }
+  if(trail.length>0){
+    var p=toScreen(trail[trail.length-1],W,H);
+    [20,12,6].forEach(function(r){
+      mCtx.beginPath();mCtx.arc(p.x,p.y,r,0,Math.PI*2);
+      mCtx.strokeStyle=crash?'rgba(255,77,106,0.2)':'rgba(0,212,255,0.15)';
+      mCtx.lineWidth=1;mCtx.stroke();
+    });
+    mCtx.beginPath();mCtx.arc(p.x,p.y,4,0,Math.PI*2);
+    mCtx.fillStyle=crash?'#ff4d6a':'#00ffb3';
+    mCtx.shadowColor=crash?'#ff4d6a':'#00ffb3';mCtx.shadowBlur=10;
+    mCtx.fill();mCtx.shadowBlur=0;
+    mCtx.strokeStyle=crash?'rgba(255,77,106,0.3)':'rgba(0,255,179,0.25)';
+    mCtx.lineWidth=0.5;mCtx.setLineDash([4,4]);
+    mCtx.beginPath();mCtx.moveTo(p.x,0);mCtx.lineTo(p.x,H);mCtx.stroke();
+    mCtx.beginPath();mCtx.moveTo(0,p.y);mCtx.lineTo(W,p.y);mCtx.stroke();
+    mCtx.setLineDash([]);
+  }
+}
+
+function updateUI(data){
+  speed=data.speed;lat=data.lat;lon=data.lng;crash=data.crash;
+  if(!baseSet&&lat!==0){baseLat=lat;baseLon=lon;baseSet=true;}
+  trail.push({lat:lat,lon:lon});
+  if(trail.length>MAX_TRAIL)trail.shift();
+
+  drawGauge(speed);
+  var pct=speed/200;
+  var sv=document.getElementById('speed-val');
+  sv.textContent=Math.round(speed);
+  var col=pct<0.4?'#00ffb3':pct<0.7?'#ffaa00':'#ff4d6a';
+  sv.style.color=col;sv.style.textShadow='0 0 20px '+col;
+  document.getElementById('bar-speed').style.width=(Math.min(pct,1)*100)+'%';
+  document.getElementById('bar-speed').style.background=col;
+  document.getElementById('bval-speed').textContent=Math.round(speed);
+
+  document.getElementById('t-lat').textContent=lat.toFixed(6);
+  document.getElementById('t-lon').textContent=lon.toFixed(6);
+  document.getElementById('t-spd').textContent=speed.toFixed(1)+' km/h';
+  document.getElementById('coord-display').textContent='LAT: '+lat.toFixed(6)+' \u00b7 LON: '+lon.toFixed(6);
+
+  var cs=document.getElementById('t-crash');
+  cs.textContent=crash?'CRASH':'CLEAR';
+  cs.style.color=crash?'#ff4d6a':'#00ffb3';
+
+  var card=document.getElementById('crash-card');
+  var ind=document.getElementById('crash-indicator');
+  var cst=document.getElementById('crash-status');
+  var cmeta=document.getElementById('crash-meta');
+  var smsBadge=document.getElementById('sms-badge');
+
+  if(crash){
+    card.classList.add('CRASH');ind.classList.add('CRASH');
+    ind.textContent='\uD83D\uDCA5';
+    cst.textContent='CRASH DETECTED';cst.style.color='#ff4d6a';
+    cmeta.textContent='Speed at impact: '+speed.toFixed(1)+' km/h';
+    smsBadge.className='sms-badge sent';
+    smsBadge.textContent='SMS \u00b7 SENT \u2192 +601121457455';
+    addLog('CRASH','CRASH @ '+speed.toFixed(1)+'km/h \u2014 SMS SENT');
+  } else {
+    card.classList.remove('CRASH');ind.classList.remove('CRASH');
+    ind.textContent='\uD83D\uDEE1\uFE0F';
+    cst.textContent='SAFE';cst.style.color='#00ffb3';
+    cmeta.textContent='No event detected';
+    smsBadge.className='sms-badge';smsBadge.textContent='SMS \u00b7 STANDBY';
+  }
+
+  var dot=document.getElementById('status-dot');
+  dot.style.background=crash?'#ff4d6a':'#00ffb3';
+  dot.style.boxShadow='0 0 8px '+(crash?'#ff4d6a':'#00ffb3');
+  document.getElementById('status-text').textContent=crash?'CRASH DETECTED':'LIVE \u00b7 ESP32';
+
+  initMapSize();drawMap();
+}
+
+var lastCrash=0;
+function addLog(type,msg){
+  if(type==='CRASH'){
+    var now=Date.now();
+    if(now-lastCrash<3000)return;
+    lastCrash=now;
+  }
+  var list=document.getElementById('log-list');
+  var n=new Date();
+  var t=n.toTimeString().slice(0,8);
+  var entry=document.createElement('div');
+  entry.className='log-entry'+( type?' '+type:'');
+  entry.innerHTML='<span class="log-time">'+t+'</span><span>'+msg+'</span>';
+  list.insertBefore(entry,list.firstChild);
+  if(list.children.length>30)list.lastChild.remove();
+}
+
+function poll(){
+  fetch('/gps').then(function(r){return r.json()}).then(function(data){
+    if(!pollOk){
+      pollOk=true;
+      addLog('','Connected to ESP32');
+    }
+    updateUI(data);
+  }).catch(function(){
+    document.getElementById('status-text').textContent='RECONNECTING...';
+    document.getElementById('status-dot').style.background='#ffaa00';
+    document.getElementById('status-dot').style.boxShadow='0 0 8px #ffaa00';
+  });
+}
+
+initMapSize();
+drawGauge(0);
+drawMap();
+addLog('','Dashboard loaded \u2014 connecting...');
+setInterval(poll,1000);
+poll();
+window.addEventListener('resize',function(){initMapSize();drawMap()});
+</script>
+</body>
+</html>
